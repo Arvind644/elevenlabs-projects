@@ -2,32 +2,22 @@
 
 import { useState } from 'react';
 import axios from 'axios';
-import { PlayIcon, PauseIcon, NewspaperIcon } from '@heroicons/react/24/solid';
-
-const topics = [
-  'Technology',
-  'Business',
-  'Science',
-  'Health',
-  'Entertainment',
-  'Sports'
-];
-
-interface Article {
-  title: string;
-  url: string;
-}
+import { PlayIcon, PauseIcon, DocumentTextIcon } from '@heroicons/react/24/solid';
 
 export default function Home() {
-  const [selectedTopic, setSelectedTopic] = useState(topics[0]);
   const [isLoading, setIsLoading] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const [error, setError] = useState('');
   const [currentAudio, setCurrentAudio] = useState<HTMLAudioElement | null>(null);
-  const [articles, setArticles] = useState<Article[]>([]);
-  const [summary, setSummary] = useState('');
+  const [url, setUrl] = useState('https://arxiv.org/abs/2307.06435');
+  const [urlContent, setUrlContent] = useState<{
+    title: string;
+    summary: string;
+    fullText: string;
+    url: string;
+  } | null>(null);
 
-  const handleGetNews = async () => {
+  const handleSummarizeUrl = async () => {
     try {
       // Stop any currently playing audio
       if (currentAudio) {
@@ -37,31 +27,34 @@ export default function Home() {
 
       setIsLoading(true);
       setError('');
-      setArticles([]);
-      setSummary('');
+      setUrlContent(null);
       
-      // Call our API route to get news and convert to speech
-      const response = await axios.post('/api/get-news', {
-        topic: selectedTopic
+      // Call our API route to summarize URL content and convert to speech
+      const response = await axios.post('/api/summarize-content', {
+        url
       });
 
-      console.log('API Response:', response.data); // Debug log
+      console.log('URL Summarization Response:', response.data);
 
       if (!response.data.audioUrl) {
         throw new Error('No audio URL received from server');
       }
 
-      // Set articles and summary
-      setArticles(response.data.articles || []);
-      setSummary(response.data.summary || '');
+      // Set content
+      setUrlContent({
+        title: response.data.title,
+        summary: response.data.summary,
+        fullText: response.data.fullText,
+        url: response.data.url
+      });
 
-      // Play the audio
+      // Setup audio
       const audio = new Audio(response.data.audioUrl);
       setCurrentAudio(audio);
       
       audio.onerror = (e) => {
         console.error('Audio playback error:', e);
-        setError('Failed to play audio. Please try again.');
+        setError('Failed to load audio. Please try again.');
         setIsPlaying(false);
       };
 
@@ -69,12 +62,13 @@ export default function Home() {
         setIsPlaying(false);
       };
 
+      // Auto-play the audio
       await audio.play();
       setIsPlaying(true);
       
     } catch (err: any) {
       console.error('Error details:', err);
-      let errorMessage = 'Failed to get news. Please try again.';
+      let errorMessage = 'Failed to summarize content. Please try again.';
       
       if (err.response?.data?.error) {
         errorMessage = err.response.data.error;
@@ -91,82 +85,112 @@ export default function Home() {
     }
   };
 
+  const handlePlayPause = () => {
+    if (!currentAudio) return;
+
+    if (isPlaying) {
+      currentAudio.pause();
+      setIsPlaying(false);
+    } else {
+      currentAudio.play();
+      setIsPlaying(true);
+    }
+  };
+
   return (
     <main className="min-h-screen p-8 bg-gray-50">
-      <div className="max-w-2xl mx-auto">
-        <h1 className="text-4xl font-bold mb-8 text-center">News Reader Assistant</h1>
+      <div className="max-w-4xl mx-auto">
+        <div className="text-center mb-8">
+          <DocumentTextIcon className="w-16 h-16 mx-auto text-blue-600 mb-4" />
+          <h1 className="text-4xl font-bold mb-2">AI Content Summarizer</h1>
+          <p className="text-gray-600">Enter any URL to get an AI-powered summary with audio playback</p>
+        </div>
         
         <div className="mb-6">
-          <label className="block text-sm font-medium mb-2">Select Topic</label>
-          <select
-            value={selectedTopic}
-            onChange={(e) => setSelectedTopic(e.target.value)}
-            className="w-full p-2 border rounded"
-          >
-            {topics.map((topic) => (
-              <option key={topic} value={topic}>
-                {topic}
-              </option>
-            ))}
-          </select>
+          <label className="block text-sm font-medium mb-2">Enter URL to Summarize</label>
+          <input
+            type="url"
+            value={url}
+            onChange={(e) => setUrl(e.target.value)}
+            placeholder="https://arxiv.org/abs/2307.06435"
+            className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+          />
+          <p className="text-sm text-gray-500 mt-1">
+            Enter any URL (research papers, articles, blogs, etc.) to get an AI-powered summary
+          </p>
         </div>
 
         <button
-          onClick={handleGetNews}
-          disabled={isLoading}
-          className="flex items-center justify-center w-full p-4 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
+          onClick={handleSummarizeUrl}
+          disabled={isLoading || !url.trim()}
+          className="flex items-center justify-center w-full p-4 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
         >
           {isLoading ? (
-            'Loading...'
+            'Processing...'
           ) : (
             <>
-              {isPlaying ? (
-                <PauseIcon className="w-6 h-6 mr-2" />
-              ) : (
-                <PlayIcon className="w-6 h-6 mr-2" />
-              )}
-              {isPlaying ? 'Playing News' : 'Get News'}
+              <DocumentTextIcon className="w-6 h-6 mr-2" />
+              Summarize & Play
             </>
           )}
         </button>
 
+        {/* Play/Pause Controls - Only show when audio is available */}
+        {currentAudio && urlContent && (
+          <div className="mt-4 flex justify-center">
+            <button
+              onClick={handlePlayPause}
+              className="flex items-center justify-center px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+            >
+              {isPlaying ? (
+                <>
+                  <PauseIcon className="w-5 h-5 mr-2" />
+                  Pause Audio
+                </>
+              ) : (
+                <>
+                  <PlayIcon className="w-5 h-5 mr-2" />
+                  Play Audio
+                </>
+              )}
+            </button>
+          </div>
+        )}
+
         {error && (
-          <div className="mt-4 p-4 bg-red-50 border border-red-200 rounded text-red-600">
+          <div className="mt-6 p-4 bg-red-50 border border-red-200 rounded-lg text-red-600">
             <p className="font-medium">Error</p>
             <p className="text-sm">{error}</p>
           </div>
         )}
 
-        {articles.length > 0 && (
-          <div className="mt-8">
-            <h2 className="text-xl font-semibold mb-4">Latest Articles</h2>
-            <div className="space-y-4">
-              {articles.map((article, index) => (
-                <div key={index} className="bg-white p-4 rounded-lg shadow-sm border border-gray-200">
-                  <div className="flex items-start">
-                    <NewspaperIcon className="w-6 h-6 text-blue-500 mt-1 mr-3 flex-shrink-0" />
-                    <div>
-                      <h3 className="font-medium">{article.title}</h3>
-                      <a 
-                        href={article.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-sm text-blue-600 hover:underline mt-1 inline-block"
-                      >
-                        Read full article →
-                      </a>
-                    </div>
-                  </div>
+        {urlContent && (
+          <div className="mt-8 space-y-6">
+            <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
+              <h2 className="text-2xl font-semibold mb-4">{urlContent.title}</h2>
+              <a 
+                href={urlContent.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-blue-600 hover:underline mb-4 inline-block"
+              >
+                View original source →
+              </a>
+              
+              <div className="mb-6">
+                <h3 className="text-lg font-medium mb-2">AI Summary</h3>
+                <p className="text-gray-700 whitespace-pre-line">{urlContent.summary}</p>
+              </div>
+              
+              <details className="mt-4">
+                <summary className="cursor-pointer text-sm font-medium text-gray-600 hover:text-gray-800">
+                  View Full Content
+                </summary>
+                <div className="mt-4 p-4 bg-gray-50 rounded text-sm max-h-96 overflow-y-auto">
+                  <p className="whitespace-pre-line">{urlContent.fullText}</p>
                 </div>
-              ))}
+              </details>
             </div>
-          </div>
-        )}
-
-        {summary && (
-          <div className="mt-6 p-4 bg-white rounded-lg shadow-sm border border-gray-200">
-            <h2 className="text-xl font-semibold mb-2">Summary</h2>
-            <p className="text-gray-700 whitespace-pre-line">{summary}</p>
           </div>
         )}
       </div>

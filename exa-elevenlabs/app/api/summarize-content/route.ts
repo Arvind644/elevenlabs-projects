@@ -18,11 +18,11 @@ export async function POST(req: Request) {
       );
     }
 
-    const { topic } = await req.json();
+    const { url } = await req.json();
 
-    if (!topic) {
+    if (!url) {
       return NextResponse.json(
-        { error: 'Missing topic parameter' },
+        { error: 'Missing URL parameter' },
         { status: 400 }
       );
     }
@@ -30,7 +30,7 @@ export async function POST(req: Request) {
     if (!EXA_API_KEY) {
       console.error('Exa API key not configured');
       return NextResponse.json(
-        { error: 'Exa API key not configured' },
+        { error: 'Exa API key not configured. Please set EXA_API_KEY in your environment variables.' },
         { status: 500 }
       );
     }
@@ -38,25 +38,20 @@ export async function POST(req: Request) {
     if (!ELEVEN_LABS_API_KEY) {
       console.error('ElevenLabs API key not configured');
       return NextResponse.json(
-        { error: 'ElevenLabs API key not configured' },
+        { error: 'ElevenLabs API key not configured. Please set ELEVEN_LABS_API_KEY in your environment variables.' },
         { status: 500 }
       );
     }
 
-    // 2. Get news using Exa
-    console.log('Fetching news from Exa for topic:', topic);
+    // 2. Get content using Exa
+    console.log('Fetching content from Exa for URL:', url);
     let exaResponse;
     try {
       exaResponse = await axios.post(
-        'https://api.exa.ai/search',
+        'https://api.exa.ai/contents',
         {
-          query: `Latest ${topic} news`,
-          numResults: 3,
-          text: true,
-          highlights: {
-            numSentences: 3,
-            highlightsPerUrl: 1
-          }
+          ids: [url],
+          text: true
         },
         {
           headers: {
@@ -69,31 +64,38 @@ export async function POST(req: Request) {
       console.error('Exa API error:', error.response?.data || error.message);
       return NextResponse.json(
         { 
-          error: 'Failed to fetch news from Exa',
+          error: 'Failed to fetch content from Exa',
           details: error.response?.data?.error || error.message
         },
         { status: 500 }
       );
     }
 
-    // 3. Process the articles
-    const articles = exaResponse.data.results || [];
-    if (articles.length === 0) {
+    // 3. Process the content
+    const results = exaResponse.data.results || [];
+    if (results.length === 0) {
       return NextResponse.json(
-        { error: 'No news articles found' },
+        { error: 'No content found for the provided URL' },
         { status: 404 }
       );
     }
 
-    const summary = `Here are the latest ${topic} news updates:\n\n` +
-      articles.map((article: any, index: number) => {
-        const title = article.title || 'Untitled';
-        const highlight = article.highlights?.[0] || article.text?.slice(0, 200) || '';
-        return `Article ${index + 1}: ${title}. ${highlight}`;
-      }).join('\n\n');
+    const content = results[0];
+    const title = content.title || 'Untitled Content';
+    const text = content.text || '';
 
-    // 4. Convert to speech using ElevenLabs
-    console.log('Converting text to speech with ElevenLabs');
+    if (!text.trim()) {
+      return NextResponse.json(
+        { error: 'No text content found at the provided URL' },
+        { status: 404 }
+      );
+    }
+
+    // 4. Generate a summary (take first 1000 characters for now, or implement AI summarization)
+    const summary = `Title: ${title}\n\nSummary: ${text.slice(0, 1000)}${text.length > 1000 ? '...' : ''}`;
+
+    // 5. Convert to speech using ElevenLabs
+    console.log('Converting summary to speech with ElevenLabs');
     let elevenLabsResponse;
     try {
       elevenLabsResponse = await axios.post(
@@ -125,18 +127,17 @@ export async function POST(req: Request) {
       );
     }
 
-    // 5. Process the audio
+    // 6. Process the audio
     const audioBase64 = Buffer.from(elevenLabsResponse.data).toString('base64');
     const audioUrl = `data:audio/mpeg;base64,${audioBase64}`;
 
-    // 6. Return the response
+    // 7. Return the response
     return NextResponse.json({ 
       audioUrl,
       summary,
-      articles: articles.map((a: any) => ({ 
-        title: a.title,
-        url: a.url 
-      }))
+      title,
+      url: content.url,
+      fullText: text
     });
 
   } catch (error: any) {
